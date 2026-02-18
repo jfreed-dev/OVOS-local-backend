@@ -1,14 +1,18 @@
-# OVOS Local Backend
+# OVOS Personal Backend
 
-Personal mycroft backend alternative to mycroft.home, written in flask
+Personal backend for OpenVoiceOS, written in flask
 
-This repo is an alternative to the backend meant for personal usage, this allows you to run fully offline, This is NOT meant to be used as a backend, but rather to run on the mycroft devices directly.
+This allows you to manage multiple devices from a single location
 
-No frontend functionality is provided, for that check out the companion project [OVOS Dashboard](https://github.com/OpenVoiceOS/OVOS-Dashboard)
+:warning: there are no user accounts :warning:
 
-For a full backend experience, the official mycroft backend has been open sourced, read the [blog post](https://mycroft.ai/blog/open-sourcing-the-mycroft-backend/)
+Documentation can be found at https://openvoiceos.github.io/community-docs/personal_backend
 
-NOTE: There is no pairing, devices will just work
+NOTES: 
+- this backend moved to SQL databases on release 0.2.0, json databases from older version are not compatible
+- at the time of writing, backend manager does not yet work with this backend version
+- backend-client now includes a CRUD api to interact with databases https://github.com/OpenVoiceOS/ovos-backend-client/pull/30
+
 
 ## Install
 
@@ -18,133 +22,75 @@ from pip
 pip install ovos-local-backend
 ```
 
+
+## Companion projects
+
+- [ovos-backend-client](https://github.com/OpenVoiceOS/ovos-backend-client) - reference python library to interact with backend
+- [ovos-backend-manager](https://github.com/OpenVoiceOS/ovos-backend-manager) - graphical interface to manage all things backend
+- [ovos-stt-plugin-selene](https://github.com/OpenVoiceOS/ovos-stt-plugin-selene) - stt plugin for selene/local backend (DEPRECATED)
+
+You can use this backend as a STT server proxy via [ovos-stt-plugin-server](https://github.com/OpenVoiceOS/ovos-stt-plugin-server), eg `https://your_backend.org/stt`
+
+
 ## Configuration
 
-configure backend by editing/creating ```~/.config/json_database/ovos_backend.json```
+configure backend by editing/creating ```~/.config/ovos_backend/ovos_backend.conf```
 
-default configuration is
 
 ```json
 {
-  "stt": {
-    "module": "google"
+  "lang": "en-us",
+  "date_format": "DMY",
+  "system_unit": "metric",
+  "time_format": "full",
+  "location": {
+    "city": {"...": "..."},
+    "coordinate": {"...": "..."},
+    "timezone": {"...": "..."}
   },
-  "backend_port": 6712,
-  "geolocate": false,
-  "override_location": false,
-  "api_version": "v1",
-  "data_path": "~",
-  "record_utterances": false,
-  "record_wakewords": false,
-  "wolfram_key": "BUNDLED_DEMO_KEY",
-  "owm_key": "BUNDLED_DEMO_KEY",
-  "default_location": {
-    "city": {
-      "code": "Lawrence",
-      "name": "Lawrence",
-      "state": {
-        "code": "KS",
-        "name": "Kansas",
-        "country": {
-          "code": "US",
-          "name": "United States"
-        }
-      }
-    },
-    "coordinate": {
-      "latitude": 38.971669,
-      "longitude": -95.23525
-    },
-    "timezone": {
-      "code": "America/Chicago",
-      "name": "Central Standard Time",
-      "dstOffset": 3600000,
-      "offset": -21600000
+
+  "stt_servers": ["https://stt.openvoiceos.org/stt"],
+
+  "server": {
+    "admin_key": "leave empty to DISABLE admin api",
+    "port": 6712,
+    "database": "sqlite:////home/user/.local/share/ovos_backend.db",
+    "skip_auth": false,
+    "geolocate": true,
+    "override_location": false,
+    "version": "v1"
+  },
+
+  "listener": {
+     "record_utterances": false,
+     "record_wakewords": false
+  },
+
+  "microservices": {
+    "wolfram_key": "$KEY",
+    "owm_key": "$KEY",
+    "email": {
+       "recipient": "",
+       "smtp": {
+            "username": "",
+            "password": "",
+            "host": "smtp.mailprovider.com",
+            "port": 465
+       }
     }
   }
+
 }
 ```
-- stt config follows the same format of mycroft.conf and uses [speech2text](https://github.com/HelloChatterbox/speech2text)
-- if override location is True, then location will be set to configured value
-- if geolocate is True then location will be set from your ip address
-- set wolfram alpha key for wolfram alpha proxy expected by official mycroft skill
-- set open weather map key for wolfram alpha proxy expected by official mycroft skill
-- if record_wakewords is set, recordings can be found at `DATA_PATH/wakewords`
-    - a searchable [json_database](https://github.com/HelloChatterbox/json_database) can be found at `~/.local/share/json_database/ovos_wakewords.jsondb`
-- if record_utterances is set, recordings can be found at `DATA_PATH/utterances`
-    - a searchable [json_database](https://github.com/HelloChatterbox/json_database) can be found at `~/.local/share/json_database/ovos_utterances.jsondb`
-- if mycroft is configured to upload metrics a searchable [json_database](https://github.com/HelloChatterbox/json_database) can be found at `~/.local/share/json_database/ovos_metrics.jsondb`
 
-### Email
-
-add the following section to your .conf
-
-```json
-"email": {
-  "username": "sender@gmail.com",
-  "password": "123456",
-  "to": "receiver@gmail.com",
-}
-```
-This uses [yagmail](https://github.com/kootenpv/yagmail), it is centered on gmail usage, but should also work with other email providers
-
-You will need to [enable less secure apps](https://hotter.io/docs/email-accounts/secure-app-gmail/) in your gmail account
-
-I recommend you setup an [Application Specific Password](https://support.google.com/accounts/answer/185833)
+database can be sqlite or mysql
+eg. `mysql+mysqldb://scott:tiger@192.168.0.134/test?ssl_ca=/path/to/ca.pem&ssl_cert=/path/to/client-cert.pem&ssl_key=/path/to/client-key.pem`
 
 
-## Mycroft Setup
+## Docker
 
-update your mycroft config to use this backend
-
-```json
-{
-    "server": {
-        "url": "http://0.0.0.0:6712",
-        "version": "v1",
-        "update": true,
-        "metrics": true
-      },
-    "tts": {
-      "module":"mimic2",
-	  "mimic2": {
-	      "url": "http://0.0.0.0:6712/synthesize/mimic2/kusal/en?text="
-      }
-   },
-   "listener": {
-        "wake_word_upload": {
-            "url": "http://0.0.0.0:6712/precise/upload"
-        }
-    }
-}
-```
-     
-
-## usage
-
-start backend 
+There is also a docker container you can use
 
 ```bash
-$ ovos-local-backend -h
-usage: ovos-local-backend [-h] [--flask-port FLASK_PORT] [--flask-host FLASK_HOST]
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --flask-port FLASK_PORT
-                        Mock backend port number
-  --flask-host FLASK_HOST
-                        Mock backend host
-
+docker run -p 8086:6712 -d --restart always --name local_backend ghcr.io/openvoiceos/local-backend:dev
 ```
-
-# Project Timeline
-
-- Jan 2018 - [initial release](https://github.com/OpenVoiceOS/OVOS-mock-backend/tree/014389065d3e5c66b6cb85e6e77359b6705406fe) of reverse engineered mycroft backend - by JarbasAI
-- July 2018 - Personal backend [added to Mycroft Roadmap](https://mycroft.ai/blog/many-roads-one-destination/)
-- October 2018 - Community [involved in discussion](https://mycroft.ai/blog/mycroft-personal-server-conversation/)
-- Jan 2019 - JarbasAI implementation [adopted by Mycroft](https://github.com/MycroftAI/personal-backend/tree/31ee96a8189d96f8102276bf4b9073811ee9a9b2)
-  - NOTE: this should have been a fork or repository transferred, but was a bare clone
-  - Original repository was archived
-- October 2019 - Official mycroft backend [open sourced under a restrictive license](https://mycroft.ai/blog/open-sourcing-the-mycroft-backend/)
-- Jun 2020 - original project [repurposed to be a mock backend](https://github.com/OpenJarbas/ZZZ-mock-backend) instead of a full alternative, [skill-mock-backend](https://github.com/JarbasSkills/skill-mock-backend) released
-- Jan 2021 - mock-backend adopted by OpenVoiceOS, original repo unarchived and ownership transferred

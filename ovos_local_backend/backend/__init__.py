@@ -12,42 +12,47 @@
 #
 
 from flask import Flask
-from ovos_local_backend.configuration import CONFIGURATION
+from ovos_config import Configuration
+from ovos_local_backend.database import connect_db
 
-API_VERSION = CONFIGURATION["api_version"]
+API_VERSION = Configuration()["server"]["version"]
 
 
 def create_app():
     app = Flask(__name__)
+
+    app, db = connect_db(app)
 
     from ovos_local_backend.utils import nice_json
     from ovos_local_backend.backend.decorators import noindex
     from ovos_local_backend.backend.auth import get_auth_routes
     from ovos_local_backend.backend.device import get_device_routes
     from ovos_local_backend.backend.stt import get_stt_routes
-    from ovos_local_backend.backend.tts import get_tts_routes
     from ovos_local_backend.backend.precise import get_precise_routes
     from ovos_local_backend.backend.external_apis import get_services_routes
+    from ovos_local_backend.backend.admin import get_admin_routes
+    from ovos_local_backend.backend.crud import get_database_crud
+
     app = get_auth_routes(app)
     app = get_device_routes(app)
     app = get_stt_routes(app)
-    app = get_tts_routes(app)
     app = get_precise_routes(app)
     app = get_services_routes(app)
+    app = get_admin_routes(app)
+    app = get_database_crud(app)
 
     @app.route("/", methods=['GET'])
     @noindex
     def hello():
         return nice_json({
-            "message": "Welcome to Mock Mycroft Backend",
-            "donate": "https://liberapay.com/jarbasAI",
-            "author": "JarbasAI"
+            "message": "Welcome to OpenVoiceOS personal backend",
+            "donate": "https://openvoiceos.org"
         })
 
     return app
 
 
-def start_backend(port=CONFIGURATION["backend_port"], host="127.0.0.1"):
+def start_backend(port=Configuration()["server"].get("port", 6712), host="127.0.0.1"):
     app = create_app()
     app.run(port=port, use_reloader=False, host=host)
     return app

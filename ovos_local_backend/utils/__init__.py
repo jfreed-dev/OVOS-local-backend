@@ -13,7 +13,10 @@
 import json
 import random
 
-from flask import make_response
+import flask
+
+from ovos_backend_client.api import WolframAlphaApi, OpenWeatherMapApi, BackendType, GeolocationApi
+from ovos_config import Configuration
 
 
 def generate_code():
@@ -27,7 +30,7 @@ def generate_code():
 
 
 def nice_json(arg):
-    response = make_response(json.dumps(arg, sort_keys=True, indent=4))
+    response = flask.make_response(json.dumps(arg, sort_keys=True, indent=4))
     response.headers['Content-type'] = "application/json"
     return response
 
@@ -51,3 +54,60 @@ def dict_to_camel_case(data):
                     v[idx] = dict_to_camel_case(item)
         converted[new_k] = v
     return converted
+
+
+class ExternalApiManager:
+    def __init__(self):
+        self.config = Configuration().get("microservices", {})
+        self.units = Configuration()["system_unit"]
+
+        self.wolfram_key = self.config.get("wolfram_key")
+        self.owm_key = self.config.get("owm_key")
+
+    @property
+    def owm(self):
+        return OpenWeatherMapApi(backend_type=BackendType.OFFLINE, key=self.owm_key)
+
+    @property
+    def wolfram(self):
+        return WolframAlphaApi(backend_type=BackendType.OFFLINE, key=self.wolfram_key)
+
+    def geolocate(self, address):
+        return GeolocationApi(backend_type=BackendType.OFFLINE).get_geolocation(address)
+
+    def wolfram_spoken(self, query, units=None, lat_lon=None):
+        units = units or self.units
+        if units != "metric":
+            units = "imperial"
+        return self.wolfram.spoken(query, units, lat_lon)
+
+    def wolfram_simple(self, query, units=None, lat_lon=None):
+        units = units or self.units
+        if units != "metric":
+            units = "imperial"
+        return self.wolfram.simple(query, units, lat_lon)
+
+    def wolfram_full(self, query, units=None, lat_lon=None):
+        units = units or self.units
+        if units != "metric":
+            units = "imperial"
+        return self.wolfram.full_results(query, units, lat_lon)
+
+    def wolfram_xml(self, query, units=None, lat_lon=None):
+        units = units or self.units
+        if units != "metric":
+            units = "imperial"
+        return self.wolfram.full_results(query, units, lat_lon,
+                                         optional_params={"output": "xml"})
+
+    def owm_current(self, lat, lon, units, lang="en-us"):
+        return self.owm.get_current((lat, lon), lang, units)
+
+    def owm_onecall(self, lat, lon, units, lang="en-us"):
+        return self.owm.get_weather((lat, lon), lang, units)
+
+    def owm_hourly(self, lat, lon, units, lang="en-us"):
+        return self.owm.get_hourly((lat, lon), lang, units)
+
+    def owm_daily(self, lat, lon, units, lang="en-us"):
+        return self.owm.get_daily((lat, lon), lang, units)

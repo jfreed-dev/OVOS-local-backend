@@ -1,107 +1,129 @@
-from flask import request
-from ovos_local_backend.session import SESSION as requests
-from ovos_local_backend.configuration import CONFIGURATION
+import flask
+
 from ovos_local_backend.backend import API_VERSION
-from ovos_local_backend.backend.decorators import noindex
-from ovos_local_backend.utils import dict_to_camel_case
-from ovos_local_backend.utils.geolocate import geolocate, get_timezone
+from ovos_local_backend.backend.decorators import noindex, requires_auth
+from ovos_config import Configuration
+from ovos_local_backend.database import get_device
+from ovos_local_backend.utils import dict_to_camel_case, ExternalApiManager
+
+
+def _get_lang():
+    auth = flask.request.headers.get('Authorization', '').replace("Bearer ", "")
+    uid = auth.split(":")[-1]  # this split is only valid here, not selene
+    device = get_device(uid)
+    if device:
+        return device.lang
+    return Configuration().get("lang", "en-us")
+
+
+def _get_units():
+    auth = flask.request.headers.get('Authorization', '').replace("Bearer ", "")
+    uid = auth.split(":")[-1]  # this split is only valid here, not selene
+    device = get_device(uid)
+    if device:
+        return device.system_unit
+    return Configuration().get("system_unit", "metric")
+
+
+def _get_latlon():
+    auth = flask.request.headers.get('Authorization', '').replace("Bearer ", "")
+    uid = auth.split(":")[-1]  # this split is only valid here, not selene
+    device = get_device(uid)
+    if device:
+        loc = device.location_json
+    else:
+        loc = Configuration()["location"]
+    lat = loc["coordinate"]["latitude"]
+    lon = loc["coordinate"]["longitude"]
+    return lat, lon
 
 
 def get_services_routes(app):
+
+    apis = ExternalApiManager()
     @app.route("/" + API_VERSION + '/geolocation', methods=['GET'])
     @noindex
+    @requires_auth
     def geolocation():
-        address = request.args["location"]
-        data = geolocate(address)
-        return {"data": {
-            "city": data["city"],
-            "country": data["country"],
-            "latitude": float(data["lat"]),
-            "longitude": float(data["lon"]),
-            "region": data["region"],
-            "timezone": get_timezone(float(data["lat"]), float(data["lon"]))
-        }}
+        address = flask.request.args["location"]
+        return apis.geolocate(address)
 
     @app.route("/" + API_VERSION + '/wolframAlphaSpoken', methods=['GET'])
     @noindex
-    def wolfie():
-        query = request.args["i"]
-        units = request.args.get("units") or "metric"
-        if units != "metric":
-            units = "imperial"
+    @requires_auth
+    def wolfie_spoken():
+        query = flask.request.args.get("input") or flask.request.args.get("i")
+        units = flask.request.args.get("units") or _get_units()
+        return apis.wolfram_spoken(query, units)
 
-        # not used?
-        # https://products.wolframalpha.com/spoken-results-api/documentation/
-        lat = str(CONFIGURATION["default_location"]["coordinate"]["latitude"])
-        lon = str(CONFIGURATION["default_location"]["coordinate"]["longitude"])
-        geolocation = request.args.get("geolocation") or lat + " " + lon
+    @app.route("/" + API_VERSION + '/wolframAlphaSimple', methods=['GET'])
+    @noindex
+    @requires_auth
+    def wolfie_simple():
+        query = flask.request.args.get("input") or flask.request.args.get("i")
+        units = flask.request.args.get("units") or _get_units()
+        return apis.wolfram_simple(query, units)
 
-        url = 'http://api.wolframalpha.com/v1/spoken'
-        params = {"appid": CONFIGURATION["wolfram_key"],
-                  "i": query,
-                  "units": units}
-        answer = requests.get(url, params=params).text
-        return answer
+    @app.route("/" + API_VERSION + '/wolframAlphaFull', methods=['GET'])
+    @noindex
+    @requires_auth
+    def wolfie_full():
+        query = flask.request.args.get("input") or flask.request.args.get("i")
+        units = flask.request.args.get("units") or _get_units()
+        return apis.wolfram_full(query, units)
+
+    @app.route("/" + API_VERSION + '/wa', methods=['GET'])
+    @noindex
+    @requires_auth
+    def wolfie_xml():
+        """ old deprecated endpoint with XML results """
+        query = flask.request.args["i"]
+        units = flask.request.args.get("units") or _get_units()
+        return apis.wolfram_xml(query, units)
 
     @app.route("/" + API_VERSION + '/owm/forecast/daily', methods=['GET'])
     @noindex
+    @requires_auth
     def owm_daily_forecast():
-        params = dict(request.args)
-        params["appid"] = CONFIGURATION["owm_key"]
-        if not request.args.get("q"):
-            params["lat"] = request.args.get("lat") or \
-                            str(CONFIGURATION["default_location"][
-                                    "coordinate"]["latitude"])
-            params["lon"] = request.args.get("lon") or \
-                            str(CONFIGURATION["default_location"][
-                                    "coordinate"]["longitude"])
-        url = "https://api.openweathermap.org/data/2.5/forecast/daily"
-        return requests.get(url, params=params).json()
+        lang = flask.request.args.get("lang") or _get_lang()
+        units = flask.request.args.get("units") or _get_units()
+        lat, lon = flask.request.args.get("lat"), flask.request.args.get("lon")
+        if not lat or not lon:
+            lat, lon = _get_latlon()
+        return apis.owm_daily(lat, lon, units, lang)
 
     @app.route("/" + API_VERSION + '/owm/forecast', methods=['GET'])
     @noindex
+    @requires_auth
     def owm_3h_forecast():
-        params = dict(request.args)
-        params["appid"] = CONFIGURATION["owm_key"]
-        if not request.args.get("q"):
-            params["lat"] = request.args.get("lat") or \
-                            str(CONFIGURATION["default_location"][
-                                    "coordinate"]["latitude"])
-            params["lon"] = request.args.get("lon") or \
-                            str(CONFIGURATION["default_location"][
-                                    "coordinate"]["longitude"])
-        url = "https://api.openweathermap.org/data/2.5/forecast"
-        return requests.get(url, params=params).json()
+        lang = flask.request.args.get("lang") or _get_lang()
+        units = flask.request.args.get("units") or _get_units()
+        lat, lon = flask.request.args.get("lat"), flask.request.args.get("lon")
+        if not lat or not lon:
+            lat, lon = _get_latlon()
+        return apis.owm_hourly(lat, lon, units, lang)
 
     @app.route("/" + API_VERSION + '/owm/weather', methods=['GET'])
     @noindex
+    @requires_auth
     def owm():
-        params = dict(request.args)
-        params["appid"] = CONFIGURATION["owm_key"]
-        if not request.args.get("q"):
-            params["lat"] = request.args.get("lat") or \
-                            str(CONFIGURATION["default_location"][
-                                    "coordinate"]["latitude"])
-            params["lon"] = request.args.get("lon") or \
-                            str(CONFIGURATION["default_location"][
-                                    "coordinate"]["longitude"])
-        url = "https://api.openweathermap.org/data/2.5/weather"
-        return requests.get(url, params=params).json()
+        lang = flask.request.args.get("lang") or _get_lang()
+        units = flask.request.args.get("units") or _get_units()
+        lat, lon = flask.request.args.get("lat"), flask.request.args.get("lon")
+        if not lat or not lon:
+            lat, lon = _get_latlon()
+        return apis.owm_current(lat, lon, units, lang)
 
     @app.route("/" + API_VERSION + '/owm/onecall', methods=['GET'])
     @noindex
+    @requires_auth
     def owm_onecall():
-        params = dict(request.args)
-        params["appid"] = CONFIGURATION["owm_key"]
-        if not request.args.get("q"):
-            params["lat"] = request.args.get("lat") or \
-                            str(CONFIGURATION["default_location"][
-                                    "coordinate"]["latitude"])
-            params["lon"] = request.args.get("lon") or \
-                            str(CONFIGURATION["default_location"][
-                                    "coordinate"]["longitude"])
-        url = "https://api.openweathermap.org/data/2.5/onecall"
-        data = requests.get(url, params=params).json()
+        units = flask.request.args.get("units") or _get_units()
+        lang = flask.request.args.get("lang") or _get_lang()
+        lat, lon = flask.request.args.get("lat"), flask.request.args.get("lon")
+        if not lat or not lon:
+            lat, lon = _get_latlon()
+        data = apis.owm_onecall(lat, lon, units, lang)
         # Selene converts the keys from snake_case to camelCase
         return dict_to_camel_case(data)
 
